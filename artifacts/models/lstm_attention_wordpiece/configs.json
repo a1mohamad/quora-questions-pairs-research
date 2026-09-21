@@ -1,0 +1,103 @@
+{
+  "system": {
+    "is_deterministic": false,
+    "mlflow_tracking_uri": "sqlite:////kaggle/working/qqp/mlflow-quora-questions-pairs.db",
+    "next_line_counter": 180,
+    "seed": 28,
+    "used_scaler": false,
+    "device": "cuda"
+  },
+  "path": {
+    "root_dir": "/kaggle/working/qqp",
+    "data_dir": "/kaggle/working/qqp/data",
+    "raw_data_dir": "/kaggle/working/qqp/data/raw",
+    "processed_data_dir": "/kaggle/working/qqp/data/processed",
+    "train_csv_path": "/kaggle/working/qqp/data/processed/train_split.csv",
+    "valid_csv_path": "/kaggle/working/qqp/data/processed/valid_split.csv",
+    "artifact_dir": "/kaggle/working/qqp/artifacts",
+    "tokenizer_dir": "/kaggle/working/qqp/artifacts/tokenizers/wordpiece_uncased_30k",
+    "model_artifact_dir": "/kaggle/working/qqp/artifacts/models/lstm_attention_wordpiece",
+    "checkpoint_dir": "/kaggle/working/qqp/artifacts/models/lstm_attention_wordpiece/checkpoint",
+    "config_path": "/kaggle/working/qqp/artifacts/models/lstm_attention_wordpiece/configs.json",
+    "history_path": "/kaggle/working/qqp/artifacts/models/lstm_attention_wordpiece/training_history.json",
+    "label_mapping_path": "/kaggle/working/qqp/artifacts/models/lstm_attention_wordpiece/label_mapping.json",
+    "req_text": "/kaggle/working/qqp/requirements.txt",
+    "req_script": "/kaggle/working/qqp/requirements.py",
+    "model_script": "/kaggle/working/qqp/model_architecture.py",
+    "notebook_path": "/kaggle/working/qqp/02-LSTM-attention-train.ipynb",
+    "mlflow_dir": "/kaggle/working/qqp/mlruns"
+  },
+  "token": {
+    "pad_token": "[PAD]",
+    "unk_token": "[UNK]",
+    "pad_idx": 0,
+    "unk_idx": 1,
+    "max_length": 64,
+    "vocab_size": 30000
+  },
+  "loader": {
+    "batch_size": 128,
+    "num_workers": 0,
+    "is_pin_memory": true
+  },
+  "train": {
+    "loss": "BCE with Logits",
+    "clip_norm": 1.5,
+    "early_stop_metric": "loss",
+    "checkpoint_metric": "F1Score",
+    "checkpoint_mode": "max",
+    "scheduler_metric": "loss",
+    "early_stop_min_delta": 0.0001,
+    "early_stop_mode": "min",
+    "early_stop_patience": 5,
+    "epochs": 50,
+    "learning_rate": 0.0003,
+    "metrics_threshold": 0.5,
+    "scheduler_type": "ReduceLROnPlateau",
+    "scheduler_factor": 0.5,
+    "scheduler_min_lr": 1e-07,
+    "scheduler_patience": 2,
+    "scheduler_threshold": 0.01,
+    "scheduler_threshold_mode": "rel",
+    "scheduler_mode": "min",
+    "weight_decay": 0.001
+  },
+  "model": {
+    "model_type": "LSTM_attention",
+    "attention_type": "MultiHead-Bahdanau",
+    "tokenizer_type": "Wordpiece",
+    "layer_norm_emb": false,
+    "embedding_type": "Trainable-from-scratch",
+    "emb_dim": 100,
+    "emb_dp": 0.2,
+    "loss": "BCE with Logits",
+    "num_heads": 4,
+    "bidirectional": true,
+    "dropout": 0.35,
+    "hidden_dim": 384,
+    "lstm_out": 768,
+    "attention_dropout": 0.0,
+    "layer_norm_lstm": false,
+    "layer_norm_attention": false,
+    "attention_projection": false,
+    "enc_dim": 768,
+    "label_smoothing": 0.05,
+    "fc_dims": [
+      1024,
+      256
+    ],
+    "fc_dp": 0.4,
+    "siamese_similarity_parm": [
+      "Encoded Q1",
+      "Encoded Q2",
+      "Multiplication Q1, Q2",
+      "Abs Subtract Q1, Q2",
+      "Cosine Similarity"
+    ],
+    "multiple_fc_param": 4,
+    "input_fc_dim": 3073,
+    "mask_fill_num": -10000000000.0,
+    "num_layers": 2,
+    "skip_connection": false
+  }
+}
