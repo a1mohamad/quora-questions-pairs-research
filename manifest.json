@@ -1,0 +1,248 @@
+{
+  "schema_version": "1.1",
+  "updated_on": "2026-10-15",
+  "status": "planned_not_trained",
+  "kaggle_assets_dataset": {
+    "name": "qqp-lstm-whitespace-assets",
+    "purpose": "Versioned Kaggle input snapshot for the CURRENT word-level/GloVe LSTM experiment. The active notebook is replaced for each subsequent architecture; this is not a multi-notebook archive.",
+    "dataset_version": null,
+    "dataset_version_status": "not_yet_published",
+    "versioning_policy": "Publish a new version of this SAME Kaggle dataset for each new whitespace + GloVe experiment. Put exactly one active notebook at the dataset root; remove the prior active notebook from the new version. Older Kaggle dataset versions and the Git repository retain historical snapshots.",
+    "permitted_research_matrix_ids": [
+      1,
+      3,
+      5,
+      7,
+      9
+    ],
+    "active_experiment_matrix_id": 3,
+    "dataset_version_is_not_model_run_version": true,
+    "record_exact_dataset_version_for_each_mlflow_run": true
+  },
+  "active_experiment": {
+    "matrix_id": 3,
+    "experiment_status": "planned_not_trained",
+    "architecture": "Shared BiLSTM + two-direction custom additive Bahdanau cross-attention + independent attention pooling + binary classifier",
+    "tokenization": "word_level_whitespace",
+    "embeddings": "pretrained_glove_6B_100d",
+    "baseline_experiment_matrix_id": 1,
+    "purpose": "Measure the effect of cross-question token alignment vs. Experiment #1 independent attention pooling under a matched GloVe/word-level protocol.",
+    "active_notebook_filename": "02b-lstm-bahdanau-crossattn-glove-train.ipynb",
+    "active_notebook_status": "to_create",
+    "proposed_mlflow_run_name": "LSTM_attention-MultiHead-CrossAttention-Bahdanau-Whitespace-v1",
+    "kaggle_notebook_source_sha256": null
+  },
+  "dataset_root_files": [
+    {
+      "path": "02b-lstm-bahdanau-crossattn-glove-train.ipynb",
+      "required": true,
+      "role": "Exactly one active source notebook; used for automatic model export, requirements scanning and MLflow notebook capture.",
+      "status": "to_create"
+    },
+    {
+      "path": "requirements.py",
+      "required": true,
+      "role": "Existing dependency-generation helper used by the notebook.",
+      "status": "include_matching_project_version"
+    },
+    {
+      "path": "mlflow-quora-questions-pairs.db",
+      "required": true,
+      "role": "Latest verified local SQLite snapshot BEFORE this Kaggle training run; copied to writable Kaggle storage.",
+      "status": "include_current_snapshot"
+    },
+    {
+      "path": "manifest.json",
+      "required": true,
+      "role": "Metadata about the CURRENT dataset version and its active experiment.",
+      "status": "this_file"
+    }
+  ],
+  "not_in_assets_dataset": [
+    "Previous experiment notebooks (available in earlier dataset versions / Git)",
+    "train.csv (attach a separate existing QQP Kaggle dataset)",
+    "glove.6B.100d.txt (attach a separate existing GloVe Kaggle dataset)",
+    "model_architecture.py (generated from the active notebook)",
+    "requirements.txt (generated from the active notebook)",
+    "model checkpoints and MLflow run artifacts (generated during training)"
+  ],
+  "external_kaggle_inputs": {
+    "qqp_dataset": {
+      "attachment_required": true,
+      "dataset_slug": null,
+      "expected_filename": "train.csv",
+      "kaggle_input_path": null,
+      "local_baseline_source": "data/raw/train.csv",
+      "notes": "Attach an existing QQP train.csv dataset separately; reproduce or verify EXACTLY Experiment #1's preprocessing and stratified 90/10 split (seed 28). Do not silently use the differently prepared WordPiece split."
+    },
+    "glove_embeddings": {
+      "attachment_required": true,
+      "dataset_slug": null,
+      "expected_filename": "glove.6B.100d.txt",
+      "kaggle_input_path": null,
+      "source": "Stanford GloVe 6B 100-dimensional pretrained vectors",
+      "notes": "Read from the attached Kaggle input dataset directly; do not upload it inside the small Experiment #3 assets dataset."
+    }
+  },
+  "architecture_plan_for_active_experiment": {
+    "tokenization": {
+      "type": "word_level_whitespace",
+      "vocab_size": 20000,
+      "max_length": 50,
+      "pad_token": "<PAD>",
+      "pad_id": 0,
+      "unk_token": "<UNK>",
+      "unk_id": 1
+    },
+    "embeddings": {
+      "type": "pretrained_glove",
+      "variant": "glove.6B.100d",
+      "dimension": 100,
+      "initially_frozen": true,
+      "unfreeze_epoch_index_zero_based": 3,
+      "verify_loaded_vector_count": true
+    },
+    "encoder": {
+      "type": "shared_bilstm",
+      "num_layers": 2,
+      "hidden_size_per_direction": 384,
+      "bidirectional": true,
+      "lstm_dropout": 0.35,
+      "padding_aware_recurrence": "required_before_training"
+    },
+    "interaction": {
+      "type": "bidirectional_cross_attention",
+      "scoring": "custom_bahdanau_additive",
+      "num_heads": 4,
+      "query_1": "question_1_tokens",
+      "key_value_1": "question_2_tokens",
+      "query_2": "question_2_tokens",
+      "key_value_2": "question_1_tokens",
+      "questions_concatenated_before_attention": false,
+      "residual_and_normalization": "planned; keep explicit and test",
+      "safe_empty_and_all_masked_handling": "required_before_training"
+    },
+    "pooling_after_interaction": {
+      "type": "independent_additive_attention_pooling",
+      "reason": "Keep pooling compatible with Experiment #1 for a controlled comparison."
+    },
+    "classification": {
+      "pair_features": [
+        "q1",
+        "q2",
+        "abs(q1-q2)",
+        "q1*q2",
+        "cosine_similarity(q1,q2)"
+      ],
+      "fully_connected_hidden_dimensions": [
+        1024,
+        256
+      ],
+      "fully_connected_dropout": 0.4,
+      "output": "one_binary_classification_logit_per_pair"
+    }
+  },
+  "screening_training_plan_for_active_experiment": {
+    "random_seed": 28,
+    "batch_size": 128,
+    "max_epochs": 50,
+    "optimizer": "AdamW",
+    "learning_rate": 0.0003,
+    "weight_decay": 0.001,
+    "loss": "BCEWithLogits_with_label_smoothing",
+    "label_smoothing_epsilon": 0.05,
+    "gradient_clip_norm": 1.5,
+    "scheduler": "ReduceLROnPlateau",
+    "scheduler_metric": "validation_loss",
+    "scheduler_factor": 0.5,
+    "scheduler_patience": 2,
+    "early_stopping_metric": "validation_loss",
+    "early_stopping_patience": 5,
+    "early_stopping_min_delta": 0.0001,
+    "checkpoint_metric": "validation_F1",
+    "checkpoint_mode": "max",
+    "threshold_selection": "validation_precision_recall_curve",
+    "train_fraction": 0.9,
+    "validation_fraction": 0.1,
+    "stratification_label": "is_duplicate",
+    "data_split_status": "match_to_experiment_1_not_yet_verified"
+  },
+  "kaggle_runtime": {
+    "working_directory": "/kaggle/working/qqp",
+    "input_dataset_location": "Resolve from /kaggle/input at runtime; do not assume a dataset-version folder structure.",
+    "copy_from_dataset_to_working_directory": [
+      "02b-lstm-bahdanau-crossattn-glove-train.ipynb",
+      "requirements.py",
+      "mlflow-quora-questions-pairs.db",
+      "manifest.json"
+    ],
+    "notebook_path_after_copy": "/kaggle/working/qqp/02b-lstm-bahdanau-crossattn-glove-train.ipynb",
+    "do_not_overwrite_existing_working_db_without_verification": true,
+    "notebook_source_consistency": "NOTEBOOK_PATH must point to the exact matching source notebook. Verify it matches the model cells actually executed in Kaggle before exporting model_architecture.py or logging the notebook."
+  },
+  "kaggle_mlflow_workflow": {
+    "database_filename": "mlflow-quora-questions-pairs.db",
+    "tracking_uri": "sqlite:////kaggle/working/qqp/mlflow-quora-questions-pairs.db",
+    "experiment_name": "Quora-Question-Pairs/LSTM_attention",
+    "import": "Copy latest verified database snapshot from this Kaggle dataset to writable /kaggle/working/qqp, preserving historical runs. Check for an existing writable DB before deciding to overwrite.",
+    "artifact_path_rewrite": "Save the original Windows artifact_location, temporarily point the existing LSTM_attention experiment to the Kaggle artifact root, then restore its previous URI and new run/model URIs before backup/export.",
+    "log": [
+      "experiment_matrix_id",
+      "kaggle_dataset_name_and_version",
+      "source_notebook_filename_and_sha256",
+      "actual_model_architecture",
+      "requirements",
+      "source_notebook",
+      "model_configs",
+      "tokenizer_vocabulary",
+      "train_and_validation_metrics",
+      "threshold",
+      "training_history_dict",
+      "best_checkpoint",
+      "run_summary"
+    ],
+    "export": {
+      "zip_path": "/kaggle/working/qqp-transfer.zip",
+      "include": [
+        "updated_sqlite_db_backup",
+        "new_mlflow_run_artifacts",
+        "active_model_artifacts"
+      ],
+      "restore_previous_artifact_uris_before_export": true,
+      "notes": "Use SQLite backup API for a consistent DB snapshot. The export should contain only newly generated artifacts that exist on Kaggle. Import into local MLflow only after checking the local DB has not gained newer runs."
+    }
+  },
+  "generated_during_training": [
+    "model_architecture.py",
+    "requirements.txt",
+    "artifacts/models/lstm_bahdanau_crossattn_glove/configs.json",
+    "artifacts/models/lstm_bahdanau_crossattn_glove/training_history.json",
+    "artifacts/models/lstm_bahdanau_crossattn_glove/checkpoint/",
+    "mlruns/"
+  ],
+  "preflight_checks": [
+    "Verify raw QQP CSV identity and the exact train/validation split match Experiment #1.",
+    "Verify pretrained GloVe vectors were actually copied into the vocabulary embedding matrix.",
+    "Verify padding, excluded-token masks, and fully masked attention rows are safe and finite.",
+    "Verify BiLSTM padding handling and classifier output shape with unequal question lengths.",
+    "Verify the exported Python model source matches the exact notebook that Kaggle trains.",
+    "Test forward/backward pass, metric computation, and MLflow database import/export before a full training run.",
+    "Verify the dataset release contains just the active notebook at its root, not obsolete experiment notebooks.",
+    "Confirm the source notebook and requirements helper on Kaggle match those intended for this release.",
+    "Record and log the Kaggle dataset version and active notebook hash for reproducibility."
+  ],
+  "how_to_release_next_version": [
+    "Select next whitespace/GloVe experiment and update active_experiment, architecture_plan_for_active_experiment, and screening_training_plan_for_active_experiment.",
+    "Remove the previous active notebook from the dataset root; add only the new source notebook.",
+    "Include the matching requirements.py and a recent verified local MLflow database snapshot.",
+    "Update the dataset version/status, notebook filename/hash and external dependencies in manifest.json.",
+    "Publish a NEW VERSION of qqp-lstm-whitespace-assets and pin it in the Kaggle run.",
+    "After training, export MLflow DB and newly generated artifacts and reconcile them locally."
+  ],
+  "results_for_active_experiment": {
+    "training_completed": false,
+    "best_validation_f1": null,
+    "run_id": null,
+    "best_epoch": null
+  }
+}
