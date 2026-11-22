@@ -1,6 +1,6 @@
 # QQP LSTM–attention experiment handoff
 
-Prepared: 2026-09-09. Major continuations: 2026-10-15 (roadmap), 2026-11-17 (Kaggle/MLflow and #3A/#3B), and **2026-11-22 (#3C completed experiment)**. This document distinguishes historical audits, implemented notebook code, verified saved training outputs, user-reported status, and future proposals. Editing this handoff does not launch training or modify the source notebooks.
+Prepared: 2026-09-09. Major continuations: 2026-10-15 (roadmap), 2026-11-17 (Kaggle/MLflow and #3A/#3B), and **2026-11-22 (#3C completion plus agreed adaptive #4–#10 pooling plan, v2)**. This document distinguishes historical audits, implemented notebook code, verified saved training outputs, user-reported status, and future proposals. Editing this handoff does not launch training or modify the source notebooks.
 
 ## Purpose and working constraints
 
@@ -13,6 +13,101 @@ Explore how attention scoring and the location of question interaction affect Qu
 - This document is a handoff, not authorization to launch all experiments unattended. At the start of the next session, inspect current files and follow the user's requested implementation scope.
 - Separate verified historical behavior, agreed experiment interests, and recommendations. Do not interpret an old configuration label as proof of executed behavior.
 
+## November 22, 2026 — AGREED NEXT-STAGE DESIGN: adaptive pooling selection for #4–#10
+
+**START HERE for the next experiment.** This section records the user's **latest agreed plan** after comparing #3A/#3B/#3C; it **supersedes older instructions below that describe #4 as just one learned-pooling model**. Older notes remain for architecture provenance, Kaggle/MLflow instructions and historical evidence. This plan is **not an instruction to start all runs automatically**: implement the requested next variant one at a time and inspect the latest actual source notebooks first.
+
+### 1. Research goal and why the pooling plan changed
+
+The 10 **core** experiment IDs remain **#1–#10**, with paired tokenizer/embedding families and four interaction designs. Pooling variants are **letters within a core experiment**, not new core IDs. Specifically, the user wants to find the strongest QQP models while using enough controlled comparisons to distinguish the effect of **interaction architecture** from the effect of **final pooling**, without exhaustively training all combinations. Within the existing BiLSTM + question-pair comparison pipeline, all of #4–#10 still need a **sequence-to-vector summarization step** after token interaction; the chosen pooling strategy may depend on the interaction architecture and tokenization.
+
+**Verified latest #3 benchmark context (actual saved execution outputs from uploaded notebooks, validation only):**
+
+| Variant | Tokenization and cross-attention | Final pooling | Best validation F1 (↑) | Saved source snapshot |
+|---|---|---|---:|---|
+| #3A | Word-level + GloVe; bidirectional additive Bahdanau cross-attention; PAD-only | Learned multihead additive/Bahdanau pooling; PAD-only | **0.8285** | `02b-lstm-bahdanau-crossattn-glove-train(8).ipynb` |
+| #3B | As #3A; PAD-only cross-attention | Learned additive pooling; mask NLTK stopwords and PAD **at pooling only** | **0.8297** | `02b-lstm-bahdanau-crossattn-glove-stopmask-train(3).ipynb` |
+| #3C | As #3A; PAD-only cross-attention | Dedicated `MaskedMeanMaxPool`; PAD-only | **0.8332** | `02b-lstm-bahdanau-crossattn-glove-meanmax-train(4).ipynb` |
+
+Each of these three more recent uploaded notebooks contains end-of-run output including early stopping and `Export ready: /kaggle/working/qqp-transfer.zip`. Earlier November 17/22 status tables that say #3A/#3B were *only reported* or *still training* are **outdated as of this continuation**. These are **validation** F1 scores, not held-out test scores; do not infer statistical certainty, universal pooling superiority, or independent replicate counts. #3C's mean+max pooling increases the pair-classifier input (3073 → 6145 for current dimensions) and its parameter count, so its performance advantage is not a perfectly parameter-matched pooling-only isolation. The user additionally reports **two successful #3C training attempts**, but the uploaded run snapshots alone have not established two independently identified seeds/runs; verify run IDs/seeds before aggregating their results. The verified metrics justify **testing Mean+Max seriously**, not declaring it optimal everywhere.
+
+### 2. The agreed adaptive 12-run screening plan
+
+The user's plan is **3 + 2 + 1 + 2 + 1 + 2 + 1 = 12 planned new full-training runs** for core experiments #4–#10, *conditional on #4's outcomes*. This replaces the earlier assistant proposal of two runs for #4 and one for each later experiment.
+
+| Core ID | Family and interaction | Planned final pooling tests | Planned runs |
+|---|---|---|---:|
+| **#4** | **WordPiece + trainable embeddings; additive bidirectional cross-attention** | **All three**: #4A learned Bahdanau pooling (PAD-only), #4B mean+max (PAD-only), #4C learned Bahdanau pooling + full-original-word StopMask (pooling only) | **3** |
+| **#5** | **GloVe/word-level; custom additive joint (combined-sequence) attention** | **Top two pooling candidates** selected using #3 and #4 evidence, with current results and model costs considered | **2** |
+| **#6** | **WordPiece; custom additive joint attention** | **Winner from #5** as first screening choice; revisit only if new results justify it | **1** |
+| **#7** | **GloVe/word-level; PyTorch scaled dot-product bidirectional cross-attention** | **Top two plausible pooling candidates**; new attention mechanism may have a different optimal pool | **2** |
+| **#8** | **WordPiece; PyTorch scaled dot-product cross-attention** | **Winner from #7** as first screening choice | **1** |
+| **#9** | **GloVe/word-level; PyTorch scaled dot-product joint attention** | **Top two plausible pooling candidates**; avoid assuming #5's winner carries over to dot-product joint attention | **2** |
+| **#10** | **WordPiece; PyTorch scaled dot-product joint attention** | **Winner from #9** as first screening choice | **1** |
+| | **Total planned screening runs** | **3+2+1+2+1+2+1** | **12** |
+
+**Condition / decision gate after #4:** Run all three #4 variants first, holding #4's dataset, WordPiece tokenization, embedding initialization, backbone, cross-attention, trainer, thresholds, selection criteria, and compute budget matched as far as reasonably possible. The user's expectation is that **if mean+max also clearly wins for WordPiece**, this strengthens the evidence that it is a good *default* across both WordPiece and GloVe. **Then** proceed with the staged two-candidate comparison when each new interaction design first appears (#5, #7, #9), transferring its winner to the corresponding WordPiece model (#6, #8, #10). If #4 instead favors learned/StopMask pooling, produces near-ties, or has inconsistent results, **reassess the top two and the 12-run schedule rather than forcing the Mean+Max assumption**. Choosing the top two is evidence-driven, not an automatic permanent Mean+Max+Bahdanau pairing.
+
+- **Why not all three forever?** Testing 3 pooling methods for all seven core IDs (#4–#10) would require **21** runs. The 12-run plan screens every *new* interaction design with two pooling candidates and saves compute on its paired tokenizer family.
+- **Why not automatically just Mean+Max?** Pooling may interact with **cross versus joint attention**, **additive versus dot-product scoring**, and tokenization. A winner in one architecture/family is informative but not universal proof.
+- **What does a single transferred winner establish?** #6/#8/#10 each check one **practical screening configuration** for WordPiece, **not** that this pooling is definitely optimal for WordPiece under that new architecture. If unexpected deterioration or large architecture-specific divergence appears, optionally test a second pooling variant there.
+- **What counts as a convincing win?** Prioritize properly matched validation F1, supporting validation loss, best-epoch/threshold behavior, model size and runtime. Small F1 gaps (~0.001–0.005) from one non-deterministic seed should **not** be treated as decisive without repeat seeds or other evidence. Avoid inventing an arbitrary fixed superiority cutoff. Confirm multiple independent seeds/run IDs for close decisions or finalists, reserving most extra training budget for finalists and HPO rather than expanding every screening combination.
+- **StopMask is NOT automatically dropped.** It has a distinct question: does excluding uninformative/functional words *only at final learned pooling* help? Include it in #4 as the user explicitly requested; after #4, select the top two intelligently rather than forcing StopMask forward when consistently inferior. StopMask is a variation on **learned additive attention pooling**, *not* on mean+max pooling, unless separately agreed.
+- **Keep the original big-picture roadmap:** after these BiLSTM experiments, shortlist ~2–4 architectures, tune hyperparameters, compare selected candidates across multiple independent seeds, perform final evaluation on an untouched test set, then continue ESIM, custom BERT-style Transformer, pretrained BERT fine-tuning and cross-family comparison. The 12-run count is **screening only**, not the full project or mandatory total training budget.
+
+### 3. Exact meaning of WordPiece StopMask in #4C (IMPORTANT)
+
+**Agreed design:** With WordPiece, if an **original complete word** belongs to the same defined English stopword list (NLTK, subject to existing preprocessing/casing), **mask every subword token belonging to that original word** in the **final learned attention-pooling mask**. Keep every subword unmasked for a non-stopword, even if its isolated token string coincides with a stopword string. This is **position-specific**, not a constant vocabulary-ID mask.
+
+Example (illustrative segmentation only):
+
+```text
+Original words:     "because"     "unbelievable"   "story"
+WordPiece pieces:   ["be", "##cause", "un", "##believable", "story"]
+Original stopword?  [ yes,  yes,       no,   no,              no ]
+Final pool keep:    [False, False,      True, True,            True]
+```
+
+The example is conceptual; **the actual custom tokenizer may split words differently**. The important rule is **word-boundary alignment**. Masking only subwords that happen to match strings in `stopwords.words('english')` is incorrect: the *same* subword could occur inside both a stopword and a non-stopword. The #3B method `QuoraTokenizer.build_pooling_mask()` produced a **vocabulary-level ID lookup** for whitespace; **do not copy that implementation unchanged into WordPiece**.
+
+**Suggested focused implementation for #4C, contingent on inspecting #2's actual tokenizer and dataset pipeline:**
+
+1. Begin from **the working #4A WordPiece architecture**, with identical WordPiece token IDs, max length, dataset splits, cross-attention and trained-embedding setup. The currently uploaded #2 code wraps `PreTrainedTokenizerFast` in `QuoraTokenizer.encode()` and returns **only `input_ids`**; `QuoraDataset.__getitem__()` currently returns `q1`, `q2`, `label` (no per-position pool masks).
+2. At tokenization/dataset time, identify original-word spans under the **same normalization/tokenization rules** used for the actual model input. Use a fast tokenizer's **offset mapping** and/or trustworthy **word-ID alignment** to associate each subword position with the **full original word**. Ensure token offsets and compared word spans refer to the *same preprocessed string*; test punctuation, contractions, case, `[UNK]`, truncation, and any special IDs. Do not re-tokenize the text in a way that changes the original #2/#4A `input_ids` merely to obtain a mask.
+3. Produce **per-question `[L]` Boolean pooling-keep masks**, where `False` marks PAD and every subpiece of an original NLTK stopword, and `True` marks other valid positions. The cross-attention mask remains **PAD-only**. WordPiece punctuation/non-stopwords/UNK remain eligible except when the entire original word containing a subpiece is a stopword, according to the agreed normalization policy.
+4. Thread both per-example/per-question masks through the dataset/batches into the model **and every caller of `model(...)`** (training, validation, evaluation, prediction and exports as appropriate). Unlike #3B, **token IDs alone do not reliably encode original-word membership**, so merely registering a per-vocabulary tensor in `QuoraSiameseClassifier` cannot implement this rule. This **may require a small explicitly scoped change to existing `Trainer` model-call plumbing**, rather than pretending every trainer line will stay unchanged. Preserve all unrelated trainer behavior.
+5. For each question, if the derived pooling mask has **no eligible token**, use the original **PAD-only pooling mask as a fallback**; keep the upstream packed-BiLSTM requirement of at least one actual valid token. Do not allow an all-masked softmax. Exclude stopwords **only at final learned additive pooling**—they still influence the shared BiLSTM and bidirectional cross-attention.
+6. Verify correctness with small WordPiece examples: a one-piece stopword, a multi-piece stopword, a non-stopword containing the same piece, an all-stopword question, a truncated input, and a padded batch. Confirm 4C's masks differ from #4A only where intended; identical question/token ID sequences should otherwise produce the same shapes. Save enough mask-policy/tokenizer provenance for MLflow reproducibility. **As of this handoff #4C is not implemented or trained.**
+
+**Comparability caution:** #3B whitespace stopword masking and #4C original-word WordPiece masking have the **same semantic exclusion policy**, but are not identical tensor-level interventions due to different segmentation, vocabularies, embeddings and sequence lengths. Never claim cross-family F1 differences isolate stopword masking alone. Also, negations (`no`, `not`) can be NLTK stopwords and may matter greatly for QQP; masking them is an **ablation**, not an inherently better preprocessing rule.
+
+### 4. Implement #4A, #4B and #4C without losing the existing infrastructure
+
+**Core experiment #4 = WordPiece + learned embeddings + shared BiLSTM + bidirectional additive Bahdanau cross-attention.** The three variants change **only final pooling/mask policy**, with any required classifier-width adjustment for mean+max.
+
+| Variant | Base model and specific change | Do not import from GloVe |
+|---|---|---|
+| **#4A — learned PAD-only** | Start from latest **#2 WordPiece notebook**; graft #3A's additive cross-attention; retain #2/#3A multihead learned Bahdanau final pooling, PAD-only; match a clear BiLSTM packing/residual policy | No whitespace tokenizer or GloVe loader |
+| **#4B — mean+max PAD-only** | **Copy prepared #4A**; replace final pooling with independent `MaskedMeanMaxPool` from #3C; update `ENC_DIM`, classifier input width, optional projection/norm dimensions, new pooling class export | No StopMask buffer or stopword list |
+| **#4C — learned StopMask** | **Copy prepared #4A**; keep its learned Bahdanau pooling and apply new **original-word-aligned per-position** StopMask **only at final pooling**; all-masked fallback; add minimal data/mask/caller plumbing | No whitespace-style per-vocabulary stopword ID mask |
+
+- **Family rule:** #4A/B/C inherit the **WordPiece #2 tokenizer artifacts, processed splits, learned embeddings, training data, and WordPiece Kaggle assets dataset**, not the GloVe dataset. The GloVe #3A/#3B/#3C models supply only the interaction/pooling modules relevant to the requested variation.
+- **Canonical names suggested:** `02b-lstm-bahdanau-crossattn-wordpiece-train.ipynb` (#4A); `02b-lstm-bahdanau-crossattn-wordpiece-meanmax-train.ipynb` (#4B); `02b-lstm-bahdanau-crossattn-wordpiece-stopmask-train.ipynb` (#4C). These are **new suggested filenames**, not existing verified files. Give each variant distinct `ATTENTION_TYPE`, `NOTEBOOK_PATH`, model architecture `.py`, MLflow run identity and artifact directory.
+- **One consistent training policy:** same WordPiece tokenizer version, split, seed policy, hyperparameters, classifier design except dimensional changes forced by pooling, stopping/checkpoint metrics, threshold search and compute budget across #4A/B/C. #4B's wider classifier changes capacity; log total/trainable parameters. Don't make #4C a change to *cross-attention* masking.
+- **Preserve previous Kaggle/MLflow workflow:** copy the exact notebook/dependency assets from the **correct family** into writable `/kaggle/working/qqp`; take a backed-up copy of the shared SQLite MLflow history, temporarily point artifact URIs at the Kaggle working directory, log automatic model-architecture source, generated `requirements.py`, configurations/checkpoints and genuine model artifacts; in final export restore original Windows URIs and include database, `mlruns`, appropriate run-specific model files, and **the newly exported `.py` at the root of `qqp-transfer.zip`**. Keep the user's existing `MLflowTracker`, `Trainer`, `TrainingHistory` and existing trainers and exporters unless a focused change is necessary. Source notebook stored in Kaggle assets must match the executed code before training. Kaggle Save Version supplies the genuine executed notebook; do not invent/reconstruct its run outputs.
+- **Exporter dependencies:** `MaskedMeanMaxPool` must appear in the automatically extracted `class_names` for #4B; #4C's architecture and any mask-handling classes or constructor arguments must export cleanly and load the saved checkpoint. Smoke-test class imports, model forward/backward, saved state dict and ZIP membership before long training. Do not assume #2's older exporter/ZIP conventions already include the architecture file at ZIP root; adapt the known-good #3 convention.
+- **Architecture isolation:** #2's uploaded WordPiece notebook did **not** pack sequences, while #3A does; adding packing changes another variable. Decide and record whether to correct recurrence padding as part of the #4 implementation, and ensure #4A/B/C use the **same** decision. Never accidentally present a comparison against #2 as solely a cross-attention effect if other differences remain.
+
+### 5. Decision procedure to carry to the next chat
+
+1. **Before implementing #4A:** open the latest user-supplied **#2 WordPiece** notebook and the current #3A/#3B/#3C references; confirm code, family paths, masks, export and MLflow version. Keep changes small and explicit. **Do not start from the newest GloVe #3C notebook merely because it has the newest timestamp.**
+2. Implement and screen **#4A, #4B and #4C separately**, retaining the same #4 interaction architecture and independently recoverable run artifacts.
+3. Review actual #4 validation results along with completed #3A/#3B/#3C. **Only if the evidence supports a clear default** (particularly if mean+max also wins for WordPiece), select two plausible poolers to try on **#5**; record why. If not, revise candidates or replicate uncertain results before executing the remaining 12-run outline rigidly.
+4. Follow the staged approach: #5 two → #6 winner; #7 two → #8 winner; #9 two → #10 winner, with room for one extra targeted run if a transferred winner behaves unexpectedly. Choose the top two afresh for each *new* attention mechanism, not necessarily the same fixed pair in all architectures.
+5. Preserve the older roadmap: later finalist selection/HPO, independent seeds, untouched test evaluation, ESIM, custom Transformer and pretrained-BERT fine-tuning.
+
+---
+
 ## November 22, 2026 continuation — Experiment #3C trained, mean+max pooling handoff
 
 **Read this section first, then the November 17 continuation.** The newly uploaded *executed* notebook is `02b-lstm-bahdanau-crossattn-glove-meanmax-train(3).ipynb`; the `(3)` suffix is a local upload/version suffix, **not** the canonical notebook filename used by Kaggle. The actual dataset / `PathConfig.NOTEBOOK_PATH` filename is **`02b-lstm-bahdanau-crossattn-glove-meanmax-train.ipynb`**. The source was inspected on November 22; the notebook's saved training logs show the successful November 20 run. This adds a **pooling ablation #3C within core experiment #3**, **not** an eleventh core architecture.
@@ -23,10 +118,10 @@ Explore how attention scoring and the location of question interaction affect Qu
 |---|---|---|---|
 | #1 | Whitespace + GloVe, independent additive attention pooling | Historical corrected-GloVe baseline v9/v10 metrics recorded below; latest uploaded copy is not necessarily the executed baseline | `02a-lstm-bahdanau-indepattn-glove-train(1).ipynb` |
 | #2 | Custom WordPiece + *learned-from-scratch* embeddings, independent additive pooling | Latest WordPiece implementation supplied earlier; do not infer completion/metrics without its executed result | `02a-lstm-bahdanau-indepattn-wordpiece-train.ipynb`; **base for #4** |
-| #3A | Whitespace + GloVe, 4-head bidirectional Bahdanau cross-attention, then **learned additive pooling**; PAD-only | User reported completed; verified #3A metrics not provided in this handoff | `02b-lstm-bahdanau-crossattn-glove-train(7).ipynb`; canonical `02b-lstm-bahdanau-crossattn-glove-train.ipynb` |
-| #3B | Same cross-attention and additive pooling, but **NLTK stopwords excluded during final attention pooling only**, cross-attention still PAD-only | Training was reported *started*; no reliable completion metrics supplied here | `02b-lstm-bahdanau-crossattn-glove-stopmask-train(2).ipynb` |
+| #3A | Whitespace + GloVe, 4-head bidirectional Bahdanau cross-attention, then **learned additive pooling**; PAD-only | **Completed; saved output in latest uploaded `(8)` snapshot: best validation F1 0.8285** (see newer plan section above) | `02b-lstm-bahdanau-crossattn-glove-train(8).ipynb`; canonical `02b-lstm-bahdanau-crossattn-glove-train.ipynb` |
+| #3B | Same cross-attention and additive pooling, but **NLTK stopwords excluded during final attention pooling only**, cross-attention still PAD-only | **Completed; saved output in latest uploaded `(3)` snapshot: best validation F1 0.8297** (see newer plan section above) | `02b-lstm-bahdanau-crossattn-glove-stopmask-train(3).ipynb` |
 | **#3C** | Same PAD-only cross-attention as #3A, but replace additive pooling with dedicated **masked mean+max pooling** | **Completed**, demonstrated by saved training output, successful MLflow registration and ZIP export | **`02b-lstm-bahdanau-crossattn-glove-meanmax-train(3).ipynb`** |
-| **#4** | WordPiece, trainable embeddings, bidirectional additive cross-attention, then learned attention pooling | **Next planned core experiment**; not implemented/trained by this handoff | Base #2 **WordPiece family**; transfer only relevant architecture from #3A |
+| **#4A/#4B/#4C** | WordPiece, trainable embeddings, bidirectional additive cross-attention; compare **PAD-only learned**, **PAD-only mean+max**, and **original-word-aligned StopMask learned** final pooling | **Next planned core experiment, three variants**; none implemented/trained by this handoff | Base #2 **WordPiece family**; attention from #3A, pooling variants from #3A/#3C and WordPiece-specific masking design |
 
 **Verified #3C saved run output (validation, NOT untouched test):**
 
@@ -45,7 +140,7 @@ Explore how attention scoring and the location of question interaction affect Qu
 | Architecture export | **6 class cells exported** to `/kaggle/working/qqp/02b_meanmax_model_architecture.py` |
 | Final Kaggle export | Log reports `MLflow database paths restored to Windows!` and `Export ready: /kaggle/working/qqp-transfer.zip`. This confirms the export cell executed successfully, **not** that the ZIP was later extracted/verified on Windows. |
 
-**Metrics discipline:** These figures come from saved executed-cell output in the uploaded #3C notebook. The underlying SQLite run ID, independent test metrics, and the #3A/#3B matching-run results were **not verified** here; don't invent them or claim #3C is already the winning architecture. Record comparable #3A/#3B metrics when their genuine executed notebooks or run summaries are available.
+**Metrics discipline:** The detailed #3C figures here come from its saved executed-cell output. The earlier November 22 draft did not verify #3A/#3B, **but the later uploaded `(8)` #3A and `(3)` #3B executed notebooks now verify best validation F1 0.8285 and 0.8297**, respectively (see latest plan section above). Exact SQLite run IDs, independent test metrics, and independent multi-seed confirmation remain unverified; do not invent them or claim #3C is universally winning. Record comparable #3A/#3B metrics when their genuine executed notebooks or run summaries are available.
 
 **Notebook provenance caveat:** The *first Markdown cell* of the uploaded #3C notebook still says “prepared for training,” and notebook metadata has `qqp_experiment.status='not_trained'`, despite saved epoch logs and model registration demonstrating training completed. These are **stale descriptive metadata**, not evidence that the run didn't occur. If the user later requests notebook housekeeping, align the metadata/title/status with genuine run results; this handoff update **does not edit or regenerate** the notebook.
 
@@ -230,9 +325,9 @@ MODEL_SCRIPT = ROOT_DIR / f"{NOTEBOOK_PATH.stem.split('-')[0]}_model_architectur
 
 **Keep MLflow names concise:** Examples actually present in supplied notebooks: #3A `MultiHead-Bahdanau-Cross-Pool`, #3B `MultiHead-Bahdanau-Cross-Pool-StopMask`, **#3C `MultiHead-Bahdanau-Cross-Pool-MeanMax`**, #2 `MultiHead-Bahdanau` with `TOKENIZER_TYPE='Wordpiece'`. `MODEL_TYPE='LSTM_attention'` remains unchanged, preserving the shared experiment. Avoid renaming old runs or claiming all 10 names are already implemented. For future experiments label the scoring, interaction and pooling accurately, but don't create sprawling names; record the tokenizer/embedding source separately.
 
-### 4. Next task: how to implement Experiment #4 without repeating migration mistakes
+### 4. Historical November 17 task: how to implement #4A (now superseded as the ONLY #4 variant) without repeating migration mistakes
 
-**Target #4:** WordPiece + learned embeddings + **bidirectional custom additive Bahdanau cross-attention after independent BiLSTM encodings**, then final attention pooling and the existing Siamese comparison MLP. The planned architecture is the **WordPiece counterpart of #3A**; do **not** default to #3B's StopMask or #3C's Mean+Max pooling. #3C completed after the Nov 17 handoff (Nov 22 section above). This is the next core experiment; no #4 training or complete implementation has been established in this session.
+**Historical target #4A (PAD-only learned pooling):** WordPiece + learned embeddings + **bidirectional custom additive Bahdanau cross-attention after independent BiLSTM encodings**, then final additive attention pooling and the existing Siamese comparison MLP. This is the WordPiece counterpart of #3A. **LATEST AGREEMENT ABOVE OVERRIDES A SINGLE-VARIANT #4 PLAN:** now also implement **#4B (mean+max)** and **#4C (original-word-aligned WordPiece StopMask)**, for three controlled #4 variants. The original paragraph was drafted before this decision; no #4 training or complete implementation is established here.
 
 1. **Select the latest verified WordPiece #2 notebook as the base** (`02a-lstm-bahdanau-indepattn-wordpiece-train.ipynb` supplied). In its *actual code*, inspect WordPiece tokenizer loading (`PreTrainedTokenizerFast`), pretrained tokenizer directory, prepared split files, learned embeddings, `TokenConfig` (`VOCAB_SIZE=30000`, `MAX_LENGTH=64`), `QuoraDataset`, and its own trainer/scheduler/checkpoint behavior. Preserve these rather than copying GloVe #3's tokenizer and preprocessing. Also inspect whether its BiLSTM recurrence padding behavior needs an explicitly agreed correction; #2 currently does **not** use packed sequences while #3A does, so changing packing along with cross-attention introduces an additional experimental variable. Document the decision.
 2. **Import/adapt only the architecture changes from #3A**: additive cross-attention head(s), 4-head wrapper, both directions `Cross(H1,H2)` and `Cross(H2,H1)`, masks with clearly defined `True=valid` semantics, correct residual/normalization decision, and final pooling/classifier shape handling. WordPiece special IDs and padding handling must come from #2's tokenizer/config, **not** #3A's whitespace hard-coded IDs. Use PAD-only as starting attention policy unless a separate masking ablation is requested.
