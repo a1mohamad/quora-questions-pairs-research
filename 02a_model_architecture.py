@@ -194,20 +194,9 @@ class QuoraSiameseClassifier(nn.Module):
         h1 = self.proj(h1)
         h2 = self.proj(h2)
 
-        cosine_sim = F.cosine_similarity(
-            h1,
-            h2
-        ).unsqueeze(-1)
-
+        cosine_sim = F.cosine_similarity(h1, h2).unsqueeze(-1)
         feat = torch.cat(
-            [
-                h1,
-                h2,
-                torch.abs(h1 - h2),
-                h1 * h2,
-                cosine_sim
-            ],
-            dim=1
+            [h1, h2, torch.abs(h1 - h2), h1 * h2, cosine_sim], dim=1
         )
 
         logits = self.fc_dims(feat)
